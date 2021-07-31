@@ -1,12 +1,25 @@
-#include "ShieldButton.hpp"
+#pragma once
 
-ShieldButton::ShieldButton(int touchPin, int threshold) {
+#include "ShieldButton.hpp"
+#include <FastLED.h>
+
+ShieldButton::ShieldButton(int touchPin, int threshold, CRGB *ledStrip, int stripIndex) {
   _touchPin = touchPin;
   _threshold = threshold;
+  _ledStrip = ledStrip;
+  _stripIndex = stripIndex;
+  _enabled = false;
+  _currentColor = CRGB::Black;
+  _targetMet = false;
 }
 
 void ShieldButton::loop() {
 
+  if ( ! _enabled) {
+    // Button is not enabled. No need to process anything
+    return;
+  }
+    
   _clicked = false;   // Reset our clicked flag. This will only be true on the rising edge of the button being clicked.
   
   // If we are in the middle of a debounce...exit any further processing
@@ -18,6 +31,7 @@ void ShieldButton::loop() {
   // The more capacitance in the circuit, the few cycles
   int currentTouch = touchRead(_touchPin);
   int touchValue = 0;
+  
   // There are glitches in the touch values when the underlying circuit resets. The glitch drives the value sharply toward 0. We need to ignore 
   // these glitches. These glitches only present once each 10ms loop, so take the higher value of the 2
   if (currentTouch > _lastTouchValue) {
@@ -33,6 +47,29 @@ void ShieldButton::loop() {
     _clicked = (touchValue < _threshold);
     if (_clicked) {
       _debounceTime = millis() + _debounceDuration_ms;   // The button was just clicked. Start debouncing
+      // Update the button color because of this click
+
+      // Get the single value of the Color so it can be compared to predefined colors
+      unsigned int colorVal = (_currentColor.r << 16) + (_currentColor.g << 8) + _currentColor.b;
+
+      switch (colorVal) {
+        case CRGB::Red:
+          currentColor(CRGB::Green);
+          break;
+        case CRGB::Green:
+          currentColor(CRGB::Blue);
+          break;
+        case CRGB::Blue:
+          currentColor(CRGB::White);
+          break;
+        case CRGB::White:
+          currentColor(CRGB::Red);
+          break;
+        default:
+          currentColor(CRGB::Yellow);
+          break;
+
+      }
     }
   } else {
     _clicked = false;
@@ -55,22 +92,35 @@ bool ShieldButton::isTouched() {
   return _isTouched;
 }
 
-CRGB ShieldButton::activeColor() {
-  return _activeColor;
+CRGB ShieldButton::currentColor() {
+  return _currentColor;
+}
+void ShieldButton::currentColor(CRGB newColor) {
+  if (_enabled) {
+    _currentColor = newColor;
+    Serial.println("ShieldButton::currentColor() [" + String(_stripIndex) + "] = " + String(newColor));
+    _ledStrip[_stripIndex] = _currentColor;
+  }
 }
 
-CRGB ShieldButton::inactiveColor() {
-  return _inactiveColor;
+CRGB ShieldButton::targetColor() {
+  return _targetColor;
+}
+void ShieldButton::targetColor(CRGB newTarget) {
+  _targetColor = newTarget;
 }
 
-bool ShieldButton::isActive() {
-  return _isActive;
+bool ShieldButton::targetMet() {
+  return (_enabled && (_targetColor == _currentColor));
 }
 
-void ShieldButton::isActive(bool value) {
-  _isActive = value;
+bool ShieldButton::enabled() {
+  return _enabled;
 }
 
-void ShieldButton::toggleActive() {
-  _isActive = ! _isActive;
+void ShieldButton::enabled(bool value) {
+  _enabled = value;
+  if ( ! _enabled) {
+    _currentColor[0] = CRGB::Black;
+  }
 }
